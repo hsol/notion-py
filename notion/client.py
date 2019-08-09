@@ -2,6 +2,7 @@ import hashlib
 import json
 import re
 import uuid
+from json import JSONDecodeError
 
 from requests import Session, HTTPError
 from requests.cookies import cookiejar_from_dict
@@ -176,6 +177,33 @@ class NotionClient(object):
         response = self.post("searchPagesWithParent", data).json()
         self._store.store_recordmap(response["recordMap"])
         return response["results"]
+
+    def search_blocks(self, q: str, limit=40):
+        if limit > 160 or limit <= 0:
+            raise ValueError('limit should be [x <= 160 or x > 0]')
+
+        payload = {
+            'query': q,
+            'table': 'space',
+            'id': self.current_space.id,
+            'limit': limit,
+        }
+
+        try:
+            response = self.post(endpoint='searchBlocks', data=payload)
+        except Exception as e:
+            return []
+
+        try:
+            response_json = response.json()
+        except JSONDecodeError as e:
+            return []
+
+        self._store.store_recordmap(response_json['recordMap'])
+
+        return [
+            self.get_block(block_id) for block_id in response_json.get('results', [])
+        ]
 
     def create_record(self, table, parent, **kwargs):
 

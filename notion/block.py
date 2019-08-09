@@ -2,19 +2,19 @@ import logging
 import mimetypes
 import os
 import random
+from datetime import datetime
+
 import requests
 import time
-import uuid
 
 from cached_property import cached_property
 from copy import deepcopy
 
-from .logger import logger
 from .maps import property_map, field_map, mapper
 from .operations import build_operation
 from .records import Record
 from .settings import S3_URL_PREFIX, BASE_URL
-from .utils import extract_id, now, get_embed_link, get_embed_data, add_signed_prefix_as_needed, remove_signed_prefix_as_needed, get_by_path
+from .utils import extract_id, get_embed_link, add_signed_prefix_as_needed, remove_signed_prefix_as_needed, get_by_path
 
 
 class Children(object):
@@ -160,11 +160,70 @@ class Block(Record):
     type = field_map("type")
     alive = field_map("alive")
 
+    created_by_id: str = field_map('created_by_id')
+    _created_time: float = field_map('created_time')
+
+    last_edited_by_id: str = field_map('last_edited_by_id')
+    _last_edited_time: float = field_map('last_edited_time')
+
+    @property
+    def created_time(self):
+        return datetime.fromtimestamp(self._created_time / 1000)
+
+    @property
+    def last_edited_time(self):
+        return datetime.fromtimestamp(self._last_edited_time / 1000)
+
+    def _recursive_get_contents(self, block):
+        if hasattr(block, 'children') and len(block.children) > 0:
+            return '\n'.join([
+                self._recursive_get_contents(child) for child in block.children
+            ])
+
+        if hasattr(block, 'title'):
+            return block.title
+
+        if hasattr(block, 'name'):
+            return block.name
+
+        if hasattr(block, 'collection'):
+            return block.collection.name
+
+        return ''
+
+    def __str__(self):
+        return self._recursive_get_contents(self)
+
+    @classmethod
+    def get_breadcrumb(cls, block):
+        if 'page' not in getattr(block, '_type', '') and hasattr(block, 'parent'):
+            return cls.get_breadcrumb(block.parent)
+
+        return (
+            [
+                getattr(block, 'title', getattr(block, 'name', '')),
+                *(
+                    cls.get_breadcrumb(block.parent)
+                    if hasattr(block, 'parent') else []
+                ),
+            ]
+        )
+
+    def get_page_contents(self, block):
+        if 'page' not in getattr(block, '_type', '') and hasattr(block, 'parent'):
+            return self.get_page_contents(block.parent)
+
+        return self._recursive_get_contents(block)
+
     def get_browseable_url(self):
         if "page" in self._type:
             return BASE_URL + self.id.replace("-", "")
         else:
             return self.parent.get_browseable_url() + "#" + self.id.replace("-", "")
+
+    @property
+    def breadcrumb(self):
+        return self.get_breadcrumb(self)
 
     @property
     def children(self):
