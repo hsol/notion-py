@@ -167,12 +167,8 @@ class Block(Record):
     _last_edited_time: float = field_map('last_edited_time')
 
     def _recursive_get_contents(self, block=None, **options):
+        depth = options.get('depth', 0)
         block = block if block else self
-
-        if hasattr(block, 'children') and len(block.children) > 0:
-            return '\n'.join([
-                self._recursive_get_contents(child, **options) for child in block.children
-            ])
 
         text = ''
         if hasattr(block, 'title'):
@@ -184,10 +180,31 @@ class Block(Record):
         if hasattr(block, 'collection'):
             text = block.collection.name
 
-        return options.get('depth', 0) * ' ' + (
+        text = options.get('depth', 0) * '  ' + (
             block.to_markdown(text)
             if options.get('markdown', False) else text
         )
+
+        if hasattr(block, 'children') and len(block.children) > 0:
+            if isinstance(
+                    block,
+                    (
+                            BulletedListBlock,
+                            ColumnListBlock,
+                            NumberedListBlock
+                    )
+            ):
+                options['depth'] = depth + 1
+
+            return ('\n\n' if options.get('markdown', False) else '\n').join([
+                text if 'page' not in getattr(block, '_type', '') else '',
+                *[
+                    self._recursive_get_contents(child, **options)
+                    for child in block.children
+                ]
+            ])
+
+        return text
 
     def __str__(self):
         return self._recursive_get_contents()
@@ -547,10 +564,16 @@ class SubheaderBlock(BasicBlock):
 
     _type = "sub_header"
 
+    def to_markdown(self, text):
+        return f'## {text}'
+
 
 class SubsubheaderBlock(BasicBlock):
 
     _type = "sub_sub_header"
+
+    def to_markdown(self, text):
+        return f'### {text}'
 
 
 class PageBlock(BasicBlock):
@@ -565,7 +588,7 @@ class BulletedListBlock(BasicBlock):
     _type = "bulleted_list"
 
     def to_markdown(self, text):
-        return f'- {text}'
+        return f'* {text}'
 
 
 class NumberedListBlock(BasicBlock):
