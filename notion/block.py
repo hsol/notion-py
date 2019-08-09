@@ -209,11 +209,11 @@ class Block(Record):
             ]
         )
 
-    def get_page_contents(self, block):
-        if 'page' not in getattr(block, '_type', '') and hasattr(block, 'parent'):
-            return self.get_page_contents(block.parent)
+    def get_page_contents(self):
+        if 'page' not in getattr(self, '_type', '') and hasattr(self, 'parent'):
+            return self.get_page_contents(self.parent)
 
-        return self._recursive_get_contents(block)
+        return self._recursive_get_contents(self)
 
     def get_browseable_url(self):
         if "page" in self._type:
