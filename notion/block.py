@@ -166,33 +166,48 @@ class Block(Record):
     last_edited_by_id: str = field_map('last_edited_by_id')
     _last_edited_time: float = field_map('last_edited_time')
 
-    @property
-    def created_time(self):
-        return datetime.fromtimestamp(self._created_time / 1000)
+    def _recursive_get_contents(self, block=None, **options):
+        block = block if block else self
 
-    @property
-    def last_edited_time(self):
-        return datetime.fromtimestamp(self._last_edited_time / 1000)
-
-    def _recursive_get_contents(self, block):
         if hasattr(block, 'children') and len(block.children) > 0:
             return '\n'.join([
-                self._recursive_get_contents(child) for child in block.children
+                self._recursive_get_contents(child, **options) for child in block.children
             ])
 
+        text = ''
         if hasattr(block, 'title'):
-            return block.title
+            text = block.title
 
         if hasattr(block, 'name'):
-            return block.name
+            text = block.name
 
         if hasattr(block, 'collection'):
-            return block.collection.name
+            text = block.collection.name
 
-        return ''
+        return options.get('depth', 0) * ' ' + (
+            block.to_markdown(text)
+            if options.get('markdown', False) else text
+        )
 
     def __str__(self):
-        return self._recursive_get_contents(self)
+        return self._recursive_get_contents()
+
+    def get_page_contents(self, block=None, **options):
+        block = block if block else self
+
+        if 'page' not in getattr(block, '_type', '') and hasattr(block, 'parent'):
+            return self.get_page_contents(block.parent, **options)
+
+        return self._recursive_get_contents(block, **options)
+
+    def get_browseable_url(self):
+        if "page" in self._type:
+            return BASE_URL + self.id.replace("-", "")
+        else:
+            return self.parent.get_browseable_url() + "#" + self.id.replace("-", "")
+
+    def to_markdown(self, text):
+        return text
 
     @classmethod
     def get_breadcrumb(cls, block):
@@ -209,19 +224,13 @@ class Block(Record):
             ]
         )
 
-    def get_page_contents(self, block=None):
-        block = block if block else self
+    @property
+    def created_time(self):
+        return datetime.fromtimestamp(self._created_time / 1000)
 
-        if 'page' not in getattr(block, '_type', '') and hasattr(block, 'parent'):
-            return self.get_page_contents(block.parent)
-
-        return self._recursive_get_contents(block)
-
-    def get_browseable_url(self):
-        if "page" in self._type:
-            return BASE_URL + self.id.replace("-", "")
-        else:
-            return self.parent.get_browseable_url() + "#" + self.id.replace("-", "")
+    @property
+    def last_edited_time(self):
+        return datetime.fromtimestamp(self._last_edited_time / 1000)
 
     @property
     def breadcrumb(self):
@@ -447,6 +456,10 @@ class Block(Record):
 class DividerBlock(Block):
 
     _type = "divider"
+    title = '---'
+
+    def to_markdown(self, text):
+        return '---'
 
 
 class ColumnListBlock(Block):
@@ -499,6 +512,9 @@ class TodoBlock(BasicBlock):
     def _str_fields(self):
         return super()._str_fields() + ["checked"]
 
+    def to_markdown(self, text):
+        return f"[{'x' if self.checked else ''}] {text}"
+
 
 class CodeBlock(BasicBlock):
 
@@ -506,6 +522,9 @@ class CodeBlock(BasicBlock):
 
     language = property_map("language")
     wrap = field_map("format.code_wrap")
+
+    def to_markdown(self, text):
+        return f'`{text}`'
 
 
 class FactoryBlock(BasicBlock):
@@ -519,6 +538,9 @@ class FactoryBlock(BasicBlock):
 class HeaderBlock(BasicBlock):
 
     _type = "header"
+
+    def to_markdown(self, text):
+        return f'# {text}'
 
 
 class SubheaderBlock(BasicBlock):
@@ -542,10 +564,16 @@ class BulletedListBlock(BasicBlock):
 
     _type = "bulleted_list"
 
+    def to_markdown(self, text):
+        return f'- {text}'
+
 
 class NumberedListBlock(BasicBlock):
 
     _type = "numbered_list"
+
+    def to_markdown(self, text):
+        return f'1. {text}'
 
 
 class ToggleBlock(BasicBlock):
